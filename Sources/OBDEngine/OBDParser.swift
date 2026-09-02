@@ -828,28 +828,42 @@ public final class OBDParser: OBDParserProtocol {
         }
         guard !bytes.isEmpty else { return nil }
 
-        // With ATH1, ELM327 exposes three header bytes and a trailing checksum
-        // for J1850, ISO 9141, and ISO 14230. Detect that shape by locating the
-        // diagnostic response service immediately after the three-byte header.
-        // CAN IDs were already removed above and never include a checksum here.
-        let legacyChecksumIsValid = bytes.last.map { checksum in
-            bytes.dropLast().reduce(UInt8(0), &+) == checksum
+        // With ATH1, ELM327 exposes three header bytes and the trailing check
+        // byte for J1850, ISO 9141, and ISO 14230. Detect that shape by
+        // locating the diagnostic response service immediately after the
+        // three-byte header, and confirm it against the check byte so data
+        // that merely starts with a header-like pair is left alone. CAN IDs
+        // were already removed above and never include a check byte here.
+        //
+        // ISO 9141-2 and ISO 14230 close a message with an additive (mod 256)
+        // checksum, but SAE J1850 (VPW and PWM) uses CRC-8 with polynomial
+        // 0x1D, so a J1850 frame never validates under the additive rule.
+        // `48 6B` is shared by ISO 9141-2 and J1850 VPW and cannot be told
+        // apart by header alone, so either check byte is accepted there;
+        // `41 6B` is PWM only and must carry the CRC.
+        let checkedBytes = bytes.dropLast()
+        let additiveChecksumIsValid = bytes.last.map { check in
+            checkedBytes.reduce(UInt8(0), &+) == check
         } ?? false
-        let hasLegacyHeaderShape = bytes.count >= 3 && (
-            // J1850 VPW / ISO 9141-2
-            (bytes[0] == 0x48 && bytes[1] == 0x6B) ||
+        let j1850CRCIsValid = bytes.last.map { check in
+            Self.j1850CRC8(checkedBytes) == check
+        } ?? false
+        let hasValidLegacyHeader = bytes.count >= 3 && (
+            // ISO 9141-2 / J1850 VPW
+            (bytes[0] == 0x48 && bytes[1] == 0x6B &&
+                (additiveChecksumIsValid || j1850CRCIsValid)) ||
             // ISO 14230 (KWP2000) three-byte header
-            ((bytes[0] & 0xC0) == 0x80 && bytes[1] == 0xF1) ||
-            // J1850 PWM. Without this the header was never stripped and
-            // `parsePIDResponse` matched the 0x41 *header* byte instead of the
-            // service byte, so every PWM vehicle failed to connect.
-            (bytes[0] == 0x41 && bytes[1] == 0x6B)
+            ((bytes[0] & 0xC0) == 0x80 && bytes[1] == 0xF1 &&
+                additiveChecksumIsValid) ||
+            // J1850 PWM. Without stripping, `parsePIDResponse` matched the
+            // 0x41 *header* byte instead of the service byte, so every PWM
+            // vehicle failed to connect.
+            (bytes[0] == 0x41 && bytes[1] == 0x6B && j1850CRCIsValid)
         )
         var strippedLegacyHeader = false
         if source == nil,
            bytes.count >= 5,
-           hasLegacyHeaderShape,
-           legacyChecksumIsValid,
+           hasValidLegacyHeader,
            Self.isDiagnosticResponseByte(bytes[3]) {
             source = bytes.prefix(3)
                 .map { String(format: "%02X", $0) }
@@ -864,6 +878,21 @@ public final class OBDParser: OBDParserProtocol {
             isLegacyChecksummedHeader: strippedLegacyHeader,
             lineLabel: lineLabel
         )
+    }
+
+    /// SAE J1850 message CRC: CRC-8, polynomial 0x1D, initial value 0xFF, no
+    /// reflection, final XOR 0xFF (the "CRC-8/SAE-J1850" catalogue entry,
+    /// whose check value for "123456789" is 0x4B).
+    static func j1850CRC8<S: Sequence>(_ bytes: S) -> UInt8
+        where S.Element == UInt8 {
+        var crc: UInt8 = 0xFF
+        for byte in bytes {
+            crc ^= byte
+            for _ in 0..<8 {
+                crc = crc & 0x80 != 0 ? (crc << 1) ^ 0x1D : crc << 1
+            }
+        }
+        return crc ^ 0xFF
     }
 
     /// Recognizes a CAN header token: 3 hex digits, or 8 hex digits starting

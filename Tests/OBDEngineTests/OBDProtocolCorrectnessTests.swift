@@ -112,6 +112,84 @@ final class OBDTransportReassemblyTests: XCTestCase {
         )
     }
 
+    func testJ1850VPWHeaderAndCRCAreRemovedBeforePIDParsing() throws {
+        // J1850 VPW shares the `48 6B` header shape with ISO 9141-2 but
+        // closes the message with CRC-8 (poly 0x1D), so the trailer differs
+        // from the ISO 9141-2 vector above (0x7B, not the additive 0x1E).
+        let response = "48 6B 10 41 0C 2E E0 7B>"
+
+        let addressed = try XCTUnwrap(
+            parser.addressedResponsePayloads(from: response).first
+        )
+
+        XCTAssertEqual(addressed.sourceAddress, "486B10")
+        XCTAssertEqual(addressed.bytes, [0x41, 0x0C, 0x2E, 0xE0])
+        XCTAssertTrue(addressed.isLegacyTransport)
+        XCTAssertEqual(
+            parser.parsePIDResponse(
+                response,
+                definition: StandardPIDLibrary.engineRPM
+            )?.value ?? -1,
+            3_000,
+            accuracy: 0.001
+        )
+    }
+
+    func testJ1850VPWVINRecordsDoNotIncludePerMessageCRCs() {
+        // Same VIN as the ISO 9141-2 vector, with each message closed by its
+        // J1850 CRC. Under the additive rule none of these headers validated,
+        // so every CRC byte leaked into the VIN characters.
+        let response = """
+        48 6B 10 49 02 01 31 48 47 43 87
+        48 6B 10 49 02 02 4D 38 32 36 22
+        48 6B 10 49 02 03 33 33 41 30 77
+        48 6B 10 49 02 04 30 34 33 35 96
+        48 6B 10 49 02 05 32 D7
+        >
+        """
+
+        XCTAssertEqual(parser.parseVIN(from: response), "1HGCM82633A004352")
+    }
+
+    func testJ1850PWMDTCResponseIsStrippedAndDecodedAsLegacy() throws {
+        let response = "41 6B 10 43 01 33 04 20 CA>"
+
+        let addressed = try XCTUnwrap(
+            parser.addressedResponsePayloads(from: response).first
+        )
+
+        XCTAssertEqual(addressed.sourceAddress, "416B10")
+        XCTAssertTrue(addressed.isLegacyTransport)
+        XCTAssertEqual(addressed.bytes, [0x43, 0x01, 0x33, 0x04, 0x20])
+        XCTAssertEqual(parser.parseDTCs(from: response), ["P0133", "P0420"])
+    }
+
+    func testJ1850PWMHeaderWithAdditiveTrailerIsNotStripped() throws {
+        // PWM is J1850 only, so an additive-sum trailer (0x17 here) is not a
+        // valid check byte and the leading bytes must not pass as a header.
+        let response = "41 6B 10 41 0C 2E E0 17>"
+
+        let addressed = try XCTUnwrap(
+            parser.addressedResponsePayloads(from: response).first
+        )
+
+        XCTAssertNil(addressed.sourceAddress)
+        XCTAssertFalse(addressed.isLegacyTransport)
+    }
+
+    func testJ1850CRC8MatchesTheCatalogueCheckValue() {
+        // CRC-8/SAE-J1850: poly 0x1D, init 0xFF, xorout 0xFF, check 0x4B.
+        XCTAssertEqual(OBDParser.j1850CRC8(Array("123456789".utf8)), 0x4B)
+        XCTAssertEqual(
+            OBDParser.j1850CRC8([0x41, 0x6B, 0x10, 0x41, 0x0C, 0x2E, 0xE0]),
+            0xF4
+        )
+        XCTAssertEqual(
+            OBDParser.j1850CRC8([0x48, 0x6B, 0x10, 0x41, 0x0C, 0x2E, 0xE0]),
+            0x7B
+        )
+    }
+
     func testLegacyHeaderDTCResponseIsNotDecodedAsCANCountPrefixed() {
         // ISO 9141-2 with ATH1: `48 6B <addr> 43 <pairs…> <checksum>`. The
         // additive checksum validates and the header is stripped into a
@@ -784,8 +862,9 @@ final class MultiECUAndLegacyTransportTests: XCTestCase {
 
     func testJ1850PWMHeaderIsStrippedBeforePIDParsing() throws {
         // Ford PWM, ~1996-2004. The 0x41 header byte must not be mistaken for
-        // the Mode 01 service byte.
-        let response = "41 6B 10 41 0C 2E E0 17>"
+        // the Mode 01 service byte. The trailer is the J1850 CRC-8 (0xF4), not
+        // an additive checksum: a PWM frame never carries the latter.
+        let response = "41 6B 10 41 0C 2E E0 F4>"
 
         let addressed = try XCTUnwrap(
             parser.addressedResponsePayloads(from: response).first

@@ -13,8 +13,9 @@ built for real, messy vehicles:
   transport tracks which physical frames belong to which ECU rather than concatenating them.
 - **ISO-TP reassembly** — multi-frame (`CAF1`) CAN responses are reassembled in sequence, with
   out-of-order and bad-sequence continuations rejected rather than silently corrupting data.
-- **Legacy protocol support** — J1850, ISO 9141-2, and ISO 14230 (KWP) headers and checksums are
-  validated and stripped before PID parsing, not just ISO 15765 (CAN).
+- **Legacy protocol support** — J1850, ISO 9141-2, and ISO 14230 (KWP) headers and check bytes
+  (ISO additive checksums, J1850 CRC-8) are validated and stripped before PID parsing, not just
+  ISO 15765 (CAN).
 - **UDS enhanced diagnostics** — service `0x22` (read data by identifier) and `0x19` (read DTC
   information) on top of the standard Mode 06 monitor results.
 - **Adapter-aware transport policy** — bounded reconnect/backoff, a `STOPPED`-response retry
