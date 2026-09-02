@@ -27,7 +27,6 @@ public extension OBDConnectionManagerDelegate {
 public final class OBDConnectionManager: NSObject, @unchecked Sendable {
     public enum ConnectionType: Equatable, Sendable {
         case ble
-        case wifi
         case mfi
     }
 
@@ -539,7 +538,7 @@ public final class OBDConnectionManager: NSObject, @unchecked Sendable {
 #else
             return false
 #endif
-        case .wifi, .none:
+        case .none:
             return false
         }
     }
@@ -1166,7 +1165,7 @@ public final class OBDConnectionManager: NSObject, @unchecked Sendable {
             failConnection(with: OBDError.notConnected)
 #endif
 
-        case .wifi, .none:
+        case .none:
             failConnection(with: OBDError.notConnected)
         }
     }
