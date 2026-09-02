@@ -186,6 +186,8 @@ public final class OBDParser: OBDParserProtocol {
             return combined / 32_768
         case "2*((A*256)+B)/32768", "(2*((A*256)+B))/32768", "(2*(A*256+B))/32768":
             return (combined * 2) / 32_768
+        case "2*((A*256)+B)/65536", "(2*((A*256)+B))/65536", "(2*(A*256+B))/65536":
+            return (combined * 2) / 65_536
         case "(A*256+B)", "A*256+B":
             return combined
         default:

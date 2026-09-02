@@ -198,21 +198,32 @@ final class OBDPIDReferenceVectorTests: XCTestCase {
     private let parser = OBDParser()
 
     func testWidebandOxygenLambdaReferenceVectors() {
-        // SAE J1979: λ = 2 × ((A×256)+B) / 32768, so 0x8000 is the top of
-        // range (2.0) and 0x4000 is stoichiometric (1.0).
-        let topOfRange = parser.parsePIDValue(
+        // SAE J1979: λ = 2 × ((A×256)+B) / 65536, so 0x8000 is stoichiometric
+        // (1.0) and 0xFFFF is the top of range (65535 × 2 / 65536 ≈ 1.99997).
+        // The earlier 2/32768 multiplier doubled every reading.
+        let stoichiometric = parser.parsePIDValue(
             hexCode: "24",
             rawBytes: [0x80, 0x00, 0x20, 0x00],
             definition: StandardPIDLibrary.o2Bank1Sensor1Wide
         )
-        let stoichiometric = parser.parsePIDValue(
+        let topOfRange = parser.parsePIDValue(
             hexCode: "25",
-            rawBytes: [0x40, 0x00, 0x10, 0x00],
+            rawBytes: [0xFF, 0xFF, 0x10, 0x00],
+            definition: StandardPIDLibrary.o2Bank2Sensor1Wide
+        )
+        let lean = parser.parsePIDValue(
+            hexCode: "25",
+            rawBytes: [0xC0, 0x00, 0x10, 0x00],
             definition: StandardPIDLibrary.o2Bank2Sensor1Wide
         )
 
-        XCTAssertEqual(topOfRange?.value ?? -1, 2.0, accuracy: 0.000_001)
         XCTAssertEqual(stoichiometric?.value ?? -1, 1.0, accuracy: 0.000_001)
+        XCTAssertEqual(
+            topOfRange?.value ?? -1,
+            65_535.0 * 2 / 65_536,
+            accuracy: 0.000_001
+        )
+        XCTAssertEqual(lean?.value ?? -1, 1.5, accuracy: 0.000_001)
         XCTAssertNil(parser.parsePIDValue(
             hexCode: "24",
             rawBytes: [0x80, 0x00],
@@ -224,17 +235,27 @@ final class OBDPIDReferenceVectorTests: XCTestCase {
         // SAE J1979 PID 44 uses the same λ scaling as the wideband PIDs.
         let stoichiometric = parser.parsePIDValue(
             hexCode: "44",
-            rawBytes: [0x40, 0x00],
+            rawBytes: [0x80, 0x00],
             definition: StandardPIDLibrary.commandedEquivRatio
         )
         let lean = parser.parsePIDValue(
             hexCode: "44",
-            rawBytes: [0x60, 0x00],
+            rawBytes: [0xC0, 0x00],
+            definition: StandardPIDLibrary.commandedEquivRatio
+        )
+        let topOfRange = parser.parsePIDValue(
+            hexCode: "44",
+            rawBytes: [0xFF, 0xFF],
             definition: StandardPIDLibrary.commandedEquivRatio
         )
 
         XCTAssertEqual(stoichiometric?.value ?? -1, 1.0, accuracy: 0.000_001)
         XCTAssertEqual(lean?.value ?? -1, 1.5, accuracy: 0.000_001)
+        XCTAssertEqual(
+            topOfRange?.value ?? -1,
+            65_535.0 * 2 / 65_536,
+            accuracy: 0.000_001
+        )
     }
 
     func testUnverifiedGenericPIDsAreNotAdvertised() {

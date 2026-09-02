@@ -188,24 +188,24 @@ public enum StandardPIDLibrary {
         hexCode: "44", name: "Commanded Equivalence Ratio", description: "Air-fuel equivalence ratio (lambda)",
         unit: "λ", minValue: 0, maxValue: 2,
         category: .fuel,
-        // SAE J1979: λ = 2 × ((A×256)+B) / 32768.
-        equation: .linear(multiplier: 2.0 / 32768.0, offset: 0))
+        // SAE J1979: λ = 2 × ((A×256)+B) / 65536, so 0x8000 is stoichiometric.
+        equation: .linear(multiplier: 2.0 / 65536.0, offset: 0))
 
     public static let o2Bank1Sensor1Wide = PIDDefinition(
         hexCode: "24", name: "O2 Sensor 1 Wide-range",
         description: "Wide-range oxygen sensor 1 equivalence ratio",
         unit: "λ", minValue: 0, maxValue: 2,
         category: .emissions,
-        // SAE J1979: λ = 2 × ((A×256)+B) / 32768.
-        equation: .custom(formula: "2 * ((A * 256) + B) / 32768"))
+        // SAE J1979: λ = 2 × ((A×256)+B) / 65536, so 0x8000 is stoichiometric.
+        equation: .custom(formula: "2 * ((A * 256) + B) / 65536"))
 
     public static let o2Bank2Sensor1Wide = PIDDefinition(
         hexCode: "25", name: "O2 Sensor 2 Wide-range",
         description: "Wide-range oxygen sensor 2 equivalence ratio",
         unit: "λ", minValue: 0, maxValue: 2,
         category: .emissions,
-        // SAE J1979: λ = 2 × ((A×256)+B) / 32768.
-        equation: .custom(formula: "2 * ((A * 256) + B) / 32768"))
+        // SAE J1979: λ = 2 × ((A×256)+B) / 65536, so 0x8000 is stoichiometric.
+        equation: .custom(formula: "2 * ((A * 256) + B) / 65536"))
 
     public static let engineOilTemp = PIDDefinition(
         hexCode: "5C", name: "Engine Oil Temperature", description: "Engine oil temperature",
