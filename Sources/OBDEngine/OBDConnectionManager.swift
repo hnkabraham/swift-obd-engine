@@ -2131,35 +2131,44 @@ extension OBDConnectionManager: StreamDelegate {
         }
     }
 
+    // Selector-based observers run on whichever thread posts the
+    // notification, so both handlers hop to the main queue before touching
+    // connection state.
     @objc private func accessoryDidConnect(_ notification: Notification) {
-        guard automaticReconnectEnabled,
-              !intentionalDisconnect,
-              accessorySession == nil,
-              let attached = notification.userInfo?[EAAccessoryKey]
-                as? EAAccessory,
-              OBDTransportPolicy.matchingAccessoryProtocol(
-                  from: attached.protocolStrings
-              ) != nil else {
-            return
-        }
+        runOnMain { [weak self] in
+            guard let self,
+                  self.automaticReconnectEnabled,
+                  !self.intentionalDisconnect,
+                  self.accessorySession == nil,
+                  let attached = notification.userInfo?[EAAccessoryKey]
+                    as? EAAccessory,
+                  OBDTransportPolicy.matchingAccessoryProtocol(
+                      from: attached.protocolStrings
+                  ) != nil else {
+                return
+            }
 
-        switch connectionState.status {
-        case .disconnected, .scanning, .error:
-            // Re-enumerate instead of trusting the notification's accessory:
-            // another paired adapter may already be attached.
-            _ = connectToAttachedAccessoryIfAvailable()
-        case .connecting, .connected, .disconnecting:
-            break
+            switch self.connectionState.status {
+            case .disconnected, .scanning, .error:
+                // Re-enumerate instead of trusting the notification's
+                // accessory: another paired adapter may already be attached.
+                _ = self.connectToAttachedAccessoryIfAvailable()
+            case .connecting, .connected, .disconnecting:
+                break
+            }
         }
     }
 
     @objc private func accessoryDidDisconnect(_ notification: Notification) {
-        guard let detached = notification.userInfo?[EAAccessoryKey]
-                as? EAAccessory,
-              detached.connectionID == accessory?.connectionID else {
-            return
+        runOnMain { [weak self] in
+            guard let self,
+                  let detached = notification.userInfo?[EAAccessoryKey]
+                    as? EAAccessory,
+                  detached.connectionID == self.accessory?.connectionID else {
+                return
+            }
+            self.failConnection(with: OBDError.notConnected)
         }
-        failConnection(with: OBDError.notConnected)
     }
 }
 #endif
