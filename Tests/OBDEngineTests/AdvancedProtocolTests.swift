@@ -91,7 +91,7 @@ final class Mode06DiagnosticsTests: XCTestCase {
         XCTAssertEqual(maximumRecord.rawMaximum, 0x0020)
     }
 
-    func testLegacyRecordWithCANRecordLengthIsMalformed() {
+    func testLegacyRecordWithPreviousEightByteLayoutIsMalformed() {
         // The previous 8-byte TID/CID/TV/MIN/MAX layout does not exist in
         // J1979 for non-CAN transports and cannot fit a 7-byte legacy frame.
         let report = parser.parseResults(
