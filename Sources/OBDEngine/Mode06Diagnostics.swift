@@ -173,7 +173,7 @@ public final class Mode06Parser: @unchecked Sendable {
     ) -> Mode06ResultReport {
         var results: [Mode06MonitorResult] = []
         var evidence: [AdvancedDiagnosticEvidence] = []
-        let recordLength = format == .can ? 9 : 8
+        let recordLength = format == .can ? 9 : 6
         let payloads = obdParser.addressedResponsePayloads(from: response)
         appendEmptyResponseEvidence(
             response,
@@ -247,16 +247,24 @@ public final class Mode06Parser: @unchecked Sendable {
                         rawMaximum: uint16(payload[index + 7], payload[index + 8])
                     )
                 case .legacy:
+                    // SAE J1979 (non-CAN) Table 69: TID, limit type |
+                    // component ID, test value, and one limit — a minimum
+                    // when bit 7 of the limit-type byte is set, otherwise a
+                    // maximum. The other bound is left open.
+                    let limitTypeAndComponentID = payload[index + 1]
+                    let isMinimum = limitTypeAndComponentID & 0x80 != 0
+                    let limit = uint16(payload[index + 4], payload[index + 5])
                     result = Mode06MonitorResult(
                         sourceAddress: source,
                         format: .legacy,
                         monitorID: nil,
                         testID: payload[index],
-                        componentID: payload[index + 1],
+                        componentID: limitTypeAndComponentID & 0x7F,
                         unitAndScalingID: nil,
                         rawTestValue: uint16(payload[index + 2], payload[index + 3]),
-                        rawMinimum: uint16(payload[index + 4], payload[index + 5]),
-                        rawMaximum: uint16(payload[index + 6], payload[index + 7])
+                        rawMinimum: isMinimum ? limit : 0,
+                        rawMaximum: isMinimum ? 0xFFFF : limit,
+                        reportedLimit: isMinimum ? .minimum : .maximum
                     )
                 }
                 results.append(result)
@@ -301,12 +309,21 @@ public final class Mode06Parser: @unchecked Sendable {
             return nil
         }
         let status: Mode06EvaluatedResult.LimitStatus
-        if minimum > maximum {
-            status = .invalidLimits
-        } else if (minimum...maximum).contains(value) {
-            status = .withinLimits
-        } else {
-            status = .outsideLimits
+        switch result.reportedLimit {
+        case .minimum?:
+            // One-sided legacy record: the unreported bound is a sentinel and
+            // must not take part in the comparison.
+            status = value >= minimum ? .withinLimits : .outsideLimits
+        case .maximum?:
+            status = value <= maximum ? .withinLimits : .outsideLimits
+        case nil:
+            if minimum > maximum {
+                status = .invalidLimits
+            } else if (minimum...maximum).contains(value) {
+                status = .withinLimits
+            } else {
+                status = .outsideLimits
+            }
         }
         return Mode06EvaluatedResult(
             rawResult: result,

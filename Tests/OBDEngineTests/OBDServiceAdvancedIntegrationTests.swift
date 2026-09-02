@@ -268,7 +268,8 @@ final class OBDServiceMode06IntegrationTests: XCTestCase {
                 return response
             }
             if command.raw == "06" {
-                return "46 21 02 00 64 00 00 00 C8>"
+                // SAE J1979 Table 74: TID 02, minimum limit for component 04.
+                return "46 02 84 00 10 00 00>"
             }
             XCTFail("Unexpected command \(command.raw)")
             return "?"
@@ -280,9 +281,11 @@ final class OBDServiceMode06IntegrationTests: XCTestCase {
 
         XCTAssertEqual(result.format, .legacy)
         XCTAssertNil(result.monitorID)
-        XCTAssertEqual(result.testID, 0x21)
-        XCTAssertEqual(result.componentID, 0x02)
-        XCTAssertEqual(result.rawTestValue, 100)
+        XCTAssertEqual(result.testID, 0x02)
+        XCTAssertEqual(result.componentID, 0x04)
+        XCTAssertEqual(result.rawTestValue, 16)
+        XCTAssertEqual(result.reportedLimit, .minimum)
+        XCTAssertEqual(result.rawMinimum, 0)
         XCTAssertEqual(
             advancedCommands(in: transport.recordedCommands),
             ["06"]

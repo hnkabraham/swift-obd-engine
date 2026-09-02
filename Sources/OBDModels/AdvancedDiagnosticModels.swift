@@ -54,8 +54,9 @@ public enum Mode06RecordFormat: String, Codable, Hashable, Sendable {
     /// ISO 15765/J1979 layout: monitor ID, test ID, unit/scaling ID,
     /// test value, minimum, and maximum.
     case can
-    /// Legacy J1979 layout: test ID, component ID, test value, minimum,
-    /// and maximum.
+    /// SAE J1979 non-CAN layout (J1850, ISO 9141-2, ISO 14230): test ID, a
+    /// limit-type/component-ID byte, test value, and a single test limit
+    /// whose direction is given by bit 7 of the limit-type byte.
     case legacy
 }
 
@@ -64,6 +65,14 @@ public enum Mode06RecordFormat: String, Codable, Hashable, Sendable {
 /// Values deliberately remain unscaled until a sourced scaling definition is
 /// supplied. SAE unit/scaling mappings are not guessed or embedded.
 public struct Mode06MonitorResult: Codable, Hashable, Sendable {
+    /// Which limit a non-CAN record carried. SAE J1979 legacy records report
+    /// exactly one limit; an ECU with both sends two records. CAN records
+    /// always carry both, so this is nil for them.
+    public enum ReportedLimit: String, Codable, Hashable, Sendable {
+        case minimum
+        case maximum
+    }
+
     public let sourceAddress: DiagnosticSourceAddress?
     public let format: Mode06RecordFormat
     public let monitorID: UInt8?
@@ -71,8 +80,11 @@ public struct Mode06MonitorResult: Codable, Hashable, Sendable {
     public let componentID: UInt8?
     public let unitAndScalingID: UInt8?
     public let rawTestValue: UInt16
+    /// When `reportedLimit` is set, the bound the ECU did not report is the
+    /// open end of the unsigned range (0 or 0xFFFF), not an ECU value.
     public let rawMinimum: UInt16
     public let rawMaximum: UInt16
+    public let reportedLimit: ReportedLimit?
 
     public init(
         sourceAddress: DiagnosticSourceAddress?,
@@ -83,7 +95,8 @@ public struct Mode06MonitorResult: Codable, Hashable, Sendable {
         unitAndScalingID: UInt8?,
         rawTestValue: UInt16,
         rawMinimum: UInt16,
-        rawMaximum: UInt16
+        rawMaximum: UInt16,
+        reportedLimit: ReportedLimit? = nil
     ) {
         self.sourceAddress = sourceAddress
         self.format = format
@@ -94,6 +107,7 @@ public struct Mode06MonitorResult: Codable, Hashable, Sendable {
         self.rawTestValue = rawTestValue
         self.rawMinimum = rawMinimum
         self.rawMaximum = rawMaximum
+        self.reportedLimit = reportedLimit
     }
 }
 

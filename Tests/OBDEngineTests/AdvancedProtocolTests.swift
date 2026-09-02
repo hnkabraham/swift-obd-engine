@@ -56,20 +56,97 @@ final class Mode06DiagnosticsTests: XCTestCase {
     }
 
     func testLegacyRecordIsStrictlyParsedWithoutInventingScaling() throws {
+        // SAE J1979 (2002) Tables 74 and 75: `46 TID <limit type | CID>
+        // <test value> <test limit>`. Bit 7 of byte 3 selects a minimum
+        // (set) or maximum (clear) limit; a non-CAN record carries only one.
+        let report = parser.parseResults(
+            from: """
+            46 02 84 00 10 00 00
+            46 02 16 00 32 00 20
+            >
+            """,
+            format: .legacy
+        )
+
+        XCTAssertEqual(report.results.count, 2)
+        XCTAssertTrue(report.evidence.isEmpty)
+
+        let minimumRecord = try XCTUnwrap(report.results.first)
+        XCTAssertNil(minimumRecord.sourceAddress)
+        XCTAssertNil(minimumRecord.monitorID)
+        XCTAssertEqual(minimumRecord.testID, 0x02)
+        XCTAssertEqual(minimumRecord.componentID, 0x04)
+        XCTAssertNil(minimumRecord.unitAndScalingID)
+        XCTAssertEqual(minimumRecord.rawTestValue, 0x0010)
+        XCTAssertEqual(minimumRecord.reportedLimit, .minimum)
+        XCTAssertEqual(minimumRecord.rawMinimum, 0x0000)
+        XCTAssertEqual(minimumRecord.rawMaximum, 0xFFFF)
+
+        let maximumRecord = try XCTUnwrap(report.results.last)
+        XCTAssertEqual(maximumRecord.testID, 0x02)
+        XCTAssertEqual(maximumRecord.componentID, 0x16)
+        XCTAssertEqual(maximumRecord.rawTestValue, 0x0032)
+        XCTAssertEqual(maximumRecord.reportedLimit, .maximum)
+        XCTAssertEqual(maximumRecord.rawMinimum, 0x0000)
+        XCTAssertEqual(maximumRecord.rawMaximum, 0x0020)
+    }
+
+    func testLegacyRecordWithCANRecordLengthIsMalformed() {
+        // The previous 8-byte TID/CID/TV/MIN/MAX layout does not exist in
+        // J1979 for non-CAN transports and cannot fit a 7-byte legacy frame.
         let report = parser.parseResults(
             from: "46 21 02 00 64 00 00 00 C8>",
             format: .legacy
         )
-        let result = try XCTUnwrap(report.results.first)
 
-        XCTAssertNil(result.sourceAddress)
-        XCTAssertNil(result.monitorID)
-        XCTAssertEqual(result.testID, 0x21)
-        XCTAssertEqual(result.componentID, 0x02)
-        XCTAssertNil(result.unitAndScalingID)
-        XCTAssertEqual(result.rawTestValue, 100)
-        XCTAssertEqual(result.rawMinimum, 0)
-        XCTAssertEqual(result.rawMaximum, 200)
+        XCTAssertTrue(report.results.isEmpty)
+        XCTAssertEqual(report.evidence.map(\.kind), [.malformedResponse])
+    }
+
+    func testLegacyOneSidedLimitsEvaluateAgainstTheReportedBoundOnly() throws {
+        let report = parser.parseResults(
+            from: """
+            46 02 84 00 10 00 00
+            46 02 16 00 32 00 20
+            >
+            """,
+            format: .legacy
+        )
+        let unsigned = Mode06ScalingDefinition(
+            representation: .unsigned16,
+            multiplier: 1,
+            offset: 0,
+            unit: "raw",
+            provenanceNote: "J1979 Table 74/75 example"
+        )
+        let signed = Mode06ScalingDefinition(
+            representation: .signed16TwosComplement,
+            multiplier: 1,
+            offset: 0,
+            unit: "raw",
+            provenanceNote: "Signed sentinel check"
+        )
+
+        // 16 >= minimum 0 passes; 50 <= maximum 32 fails — the spec's own
+        // reading of the two example messages.
+        XCTAssertEqual(
+            try XCTUnwrap(parser.evaluate(report.results[0], using: unsigned))
+                .limitStatus,
+            .withinLimits
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(parser.evaluate(report.results[1], using: unsigned))
+                .limitStatus,
+            .outsideLimits
+        )
+        // The open 0xFFFF bound decodes to -1 under signed scaling; it must
+        // not be compared against, or every minimum-limit record would be
+        // reported as having inverted limits.
+        XCTAssertEqual(
+            try XCTUnwrap(parser.evaluate(report.results[0], using: signed))
+                .limitStatus,
+            .withinLimits
+        )
     }
 
     func testNegativeAndMalformedResponsesBecomeEvidence() {
