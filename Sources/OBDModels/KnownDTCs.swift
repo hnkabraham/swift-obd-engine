@@ -22,8 +22,8 @@ public enum KnownDTCs {
         "P0306": ("Cylinder 6 Misfire Detected", .high, "Engine Misfire"),
         // The P0300 block runs to cylinder 12. Stopping at P0306 de-rated a
         // V8's cylinder-8 misfire below the identical fault on cylinder 6,
-        // while `likelyCauses` and `costRange` still matched on "P030" — so
-        // the app handed out misfire causes for a code it called unknown.
+        // while "P030"-prefix matching elsewhere still classified it as a
+        // misfire — a code described as unrecognized yet treated as one.
         "P0307": ("Cylinder 7 Misfire Detected", .high, "Engine Misfire"),
         "P0308": ("Cylinder 8 Misfire Detected", .high, "Engine Misfire"),
         "P0309": ("Cylinder 9 Misfire Detected", .high, "Engine Misfire"),
