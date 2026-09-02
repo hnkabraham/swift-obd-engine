@@ -1323,12 +1323,7 @@ public final class OBDService: @unchecked Sendable {
         let response = try await commandCoordinator.send(command)
         try validateAdapterResponse(response, command: command.raw)
 
-        let ascii = parser.responsePayloads(from: response)
-            .flatMap { $0 }
-            .filter { $0 >= 0x20 && $0 <= 0x7E }
-        let decoded = String(bytes: ascii, encoding: .ascii)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return decoded?.isEmpty == false ? decoded! : cleanedAdapterText(response)
+        return parser.parseECUName(from: response) ?? cleanedAdapterText(response)
     }
 
     public func readVoltage() async throws -> Double {

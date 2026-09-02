@@ -367,6 +367,40 @@ public final class OBDParser: OBDParserProtocol {
         return firstValidVIN(in: frames.flatMap { $0 })
     }
 
+    // MARK: - ECU name
+
+    /// Decodes a Mode 09 PID 0A reply into its printable ASCII name.
+    ///
+    /// Each payload is `49 0A <count> <bytes…>` — one reassembled message on
+    /// CAN, or several `49 0A nn` records on legacy transports — so the
+    /// service echo and record counter are removed per payload; left in, the
+    /// 0x49 echo surfaced as a leading "I". J1979 pads the 20-byte name with
+    /// 0x00 and separates the short and long names with one, so only
+    /// printable ASCII is kept.
+    public func parseECUName(from rawData: String) -> String? {
+        var ascii: [UInt8] = []
+        for frame in decodedFrames(from: rawData) {
+            var start = 0
+            if let serviceIndex = frame.indices.first(where: {
+                frame[$0] == 0x49 &&
+                    frame.indices.contains($0 + 1) &&
+                    frame[$0 + 1] == 0x0A
+            }) {
+                start = serviceIndex + 2
+                if frame.indices.contains(start), frame[start] <= 0x09 {
+                    start += 1
+                }
+            }
+            guard start < frame.count else { continue }
+            ascii.append(
+                contentsOf: frame[start...].filter { $0 >= 0x20 && $0 <= 0x7E }
+            )
+        }
+        let decoded = String(bytes: ascii, encoding: .ascii)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return decoded?.isEmpty == false ? decoded : nil
+    }
+
     private func firstValidVIN(in bytes: [UInt8]) -> String? {
         var run: [UInt8] = []
 

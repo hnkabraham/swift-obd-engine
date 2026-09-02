@@ -265,6 +265,33 @@ final class OBDTransportReassemblyTests: XCTestCase {
         XCTAssertEqual(parser.parseVIN(from: response), "1HGCM82633A004352")
     }
 
+    func testECUNameStripsServiceEchoAndRecordCounter() {
+        // Mode 09 PID 0A: `49 0A 01` then the 20-byte name "ECM" 0x00
+        // "-EngineControl" padded with 0x00, 23 bytes over four ISO-TP
+        // frames. Left in, the 0x49 echo decoded as a leading "I".
+        let can = """
+        7E8 10 17 49 0A 01 45 43 4D
+        7E8 21 00 2D 45 6E 67 69 6E
+        7E8 22 65 43 6F 6E 74 72 6F
+        7E8 23 6C 00 00
+        >
+        """
+        XCTAssertEqual(parser.parseECUName(from: can), "ECM-EngineControl")
+
+        // Legacy transports return the same bytes as numbered four-byte
+        // records, each with its own service echo.
+        let legacy = """
+        49 0A 01 45 43 4D 00
+        49 0A 02 2D 45 6E 67
+        49 0A 03 69 6E 65 43
+        49 0A 04 6F 6E 74 72
+        49 0A 05 6F 6C 00 00
+        >
+        """
+        XCTAssertEqual(parser.parseECUName(from: legacy), "ECM-EngineControl")
+        XCTAssertNil(parser.parseECUName(from: "NO DATA>"))
+    }
+
     func testRawASCIIVINIsNotMistakenForLegacyHeader() {
         XCTAssertEqual(
             parser.parseVIN(
