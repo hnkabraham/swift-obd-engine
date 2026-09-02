@@ -684,6 +684,8 @@ private func initializationResponse(
     switch command.raw {
     case "01 00":
         return "7E8 06 41 00 BE 3F A8 13>"
+    case "01 20":
+        return "7E8 06 41 20 80 00 00 00>"
     case "ATDPN":
         return protocolIdentifier
     default:

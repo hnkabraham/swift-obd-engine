@@ -519,7 +519,7 @@ final class OBDLifecycleHardeningTests: XCTestCase {
         XCTAssertNotNil(cache.capabilities(for: identifiers[64]))
     }
 
-    func testAnonymousInitializationRerunsFullPIDDiscoveryForSelectedVehicle()
+    func testAnonymousInitializationDiscoversAllPIDPagesWithoutPersisting()
         async throws {
         let store = LifecycleMemoryCapabilityStore()
         let transport = LifecycleTransport { command in
@@ -532,6 +532,8 @@ final class OBDLifecycleHardeningTests: XCTestCase {
                 return "7E8 06 41 20 80 00 00 01>"
             case "01 40":
                 return "7E8 06 41 40 40 00 00 00>"
+            case "01 42":
+                return "7E8 04 41 42 35 E8>"
             case "ATDPN":
                 return "A6>"
             default:
@@ -545,10 +547,23 @@ final class OBDLifecycleHardeningTests: XCTestCase {
 
         try await service.initialize()
 
+        // Nothing is persisted without a vehicle identity, but the session's
+        // own support set must still cover every page the vehicle advertises;
+        // stopping at page 0 rejected control module voltage (0x42) as
+        // unsupported without ever asking the car.
         XCTAssertNil(store.capabilities(for: vehicle.id))
-        XCTAssertFalse(
-            transport.recordedCommands.map(\.raw).contains("01 20")
+        XCTAssertEqual(
+            transport.recordedCommands.map(\.raw),
+            [
+                "ATZ", "ATE0", "ATL0", "ATS0", "ATH1", "ATCAF1",
+                "ATAL", "ATAT1", "ATSP0", "01 00", "01 20",
+                "01 40", "ATDPN",
+            ]
         )
+        let voltage = try await service.readPID(
+            StandardPIDLibrary.controlModuleVoltage
+        )
+        XCTAssertEqual(voltage.value, 13.8, accuracy: 0.001)
 
         try await service.initialize(for: vehicle)
 

@@ -560,8 +560,7 @@ public final class OBDService: @unchecked Sendable {
                             cached: cached,
                             forceAutomaticProtocol:
                                 forceAutomaticProtocol,
-                            useWarmStart: useWarmStart,
-                            discoverAllPIDPages: vehicleID != nil
+                            useWarmStart: useWarmStart
                         )
                     }
             } catch {
@@ -657,8 +656,7 @@ public final class OBDService: @unchecked Sendable {
         generation: UInt64,
         cached: OBDVehicleCapabilities?,
         forceAutomaticProtocol: Bool,
-        useWarmStart: Bool,
-        discoverAllPIDPages: Bool
+        useWarmStart: Bool
     ) async throws -> InitializationOutcome {
         try ensureCurrentTransport(
             transport,
@@ -799,8 +797,12 @@ public final class OBDService: @unchecked Sendable {
             requestedBasePID: 0x00,
             parser: parser
         )
+        // Every page is discovered even without a selected vehicle: the
+        // result gates `readPID` for this session regardless of whether it
+        // is persisted, and stopping at page 0 would reject every PID above
+        // 0x20 as unsupported.
         var basePID: UInt8 = 0x00
-        while discoverAllPIDPages, basePID < 0xE0 {
+        while basePID < 0xE0 {
             let nextBase = basePID &+ 0x20
             guard supportedPIDs.contains(nextBase) else { break }
             let command = ELM327Command.readSupportedPIDs(
