@@ -204,14 +204,17 @@ public final class OBDParser: OBDParserProtocol {
     /// count — `43 <count> <count × 2 bytes>` — while J1850, ISO 9141-2, and
     /// ISO 14230 emit `43 <pairs…>` padded to the frame width with `00 00`.
     /// Applying the legacy rule to a CAN reply consumes the count byte as a
-    /// DTC high byte and yields a real but wrong code (`43 01 01 33` reads as
-    /// P0101 instead of P0133), so the transport is resolved per payload from
-    /// three signals: a CAN source address, an ATCAF1 reassembly origin (the
-    /// adapter prints numbered lines only on CAN, even without header
-    /// tokens), and the absence of a stripped legacy checksummed header.
+    /// DTC high byte and yields a real but wrong code (`43 01 01 33` would
+    /// read as P0101 instead of P0133), so the transport is resolved per
+    /// payload from four signals: a CAN source address, an ATCAF1 reassembly
+    /// origin (the adapter prints numbered lines only on CAN, even without
+    /// header tokens), a headerless single frame whose length is exactly
+    /// `2 + 2 × count` (a legacy reply is `43` plus whole pairs and so always
+    /// odd-length, so an even length that agrees with the count byte can only
+    /// be CAN), and the absence of a stripped legacy checksummed header.
     /// Source presence alone cannot distinguish CAN from legacy because
     /// `ATH1` legacy headers are also synthesized into addresses when their
-    /// additive checksum validates.
+    /// check byte validates.
     public func parseDTCs(from rawData: String) -> [String] {
         var codes: [String] = []
         var seen = Set<String>()
@@ -221,18 +224,20 @@ public final class OBDParser: OBDParserProtocol {
             let decoded: [String]
 
             if !payload.isLegacyTransport,
-               payload.sourceAddress != nil || payload.isCAF1Formatted {
+               payload.sourceAddress != nil ||
+                payload.isCAF1Formatted ||
+                Self.isHeaderlessCountPrefixedDTCFrame(frame) {
                 // CAN payloads are already stripped to the service byte by the
                 // single-frame and ISO-TP paths, so the service must lead.
                 guard let service = frame.first,
-                      service == 0x43 || service == 0x47 || service == 0x4A else {
+                      Self.isDTCResponseService(service) else {
                     continue
                 }
                 decoded = countPrefixedDTCs(in: frame)
             } else {
-                guard let serviceIndex = frame.firstIndex(where: {
-                    $0 == 0x43 || $0 == 0x47 || $0 == 0x4A
-                }) else {
+                guard let serviceIndex = frame.firstIndex(
+                    where: Self.isDTCResponseService
+                ) else {
                     continue
                 }
                 decoded = paddedDTCs(in: frame, serviceIndex: serviceIndex)
@@ -244,6 +249,25 @@ public final class OBDParser: OBDParserProtocol {
         }
 
         return codes
+    }
+
+    private static func isDTCResponseService(_ byte: UInt8) -> Bool {
+        byte == 0x43 || byte == 0x47 || byte == 0x4A
+    }
+
+    /// A headerless frame that can only be ISO 15765-4: it leads with the
+    /// service byte and its length matches the declared count exactly. Legacy
+    /// replies are `43` plus whole pairs — always odd-length — so an even
+    /// length that agrees with the count byte never occurs there.
+    private static func isHeaderlessCountPrefixedDTCFrame(
+        _ frame: [UInt8]
+    ) -> Bool {
+        guard frame.count >= 2,
+              let service = frame.first,
+              isDTCResponseService(service) else {
+            return false
+        }
+        return frame.count == 2 + 2 * Int(frame[1])
     }
 
     /// ISO 15765-4 shape: `43 <count> <count × 2 bytes>`.

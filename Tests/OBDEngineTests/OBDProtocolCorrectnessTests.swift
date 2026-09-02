@@ -228,6 +228,30 @@ final class OBDTransportReassemblyTests: XCTestCase {
         )
     }
 
+    func testHeaderlessCANSingleFrameDTCResponseUsesTheCountByte() {
+        // With ATH0 the adapter prints only the data bytes, but the shape is
+        // still count-prefixed: `43 01 01 33` is one code, P0133, not P0101.
+        XCTAssertEqual(parser.parseDTCs(from: "43 01 01 33>"), ["P0133"])
+        XCTAssertEqual(
+            parser.parseDTCs(from: "43 02 01 33 04 20>"),
+            ["P0133", "P0420"]
+        )
+        XCTAssertTrue(parser.parseDTCs(from: "43 00>").isEmpty)
+    }
+
+    func testHeaderlessLegacyDTCResponseStillDecodesPaddedPairs() {
+        // ATH0 on ISO 9141-2 / J1850 leaves `43` plus three padded pairs —
+        // seven bytes, never even — so the count-prefixed rule must not fire.
+        XCTAssertEqual(
+            parser.parseDTCs(from: "43 01 33 00 00 00 00>"),
+            ["P0133"]
+        )
+        XCTAssertEqual(
+            parser.parseDTCs(from: "43 01 33 03 00 04 20>"),
+            ["P0133", "P0300", "P0420"]
+        )
+    }
+
     func testLegacyHeaderVINRecordsDoNotIncludePerMessageChecksums() {
         let response = """
         48 6B 10 49 02 01 31 48 47 43 12
